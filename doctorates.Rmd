@@ -1,0 +1,313 @@
+---
+title: "Doctorates"
+author: "Kieran healy"
+date: "6/8/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(janitor)
+library(readxl)
+library(socviz)
+library(ggrepel)
+
+library(showtext)
+showtext_auto()
+library(myriad)
+import_myriad_semi()
+
+theme_set(theme_myriad_semi())
+
+```
+
+```{r}
+
+phds <- read_csv("data/earned_doctorates_table.csv")
+
+phds <- clean_names(gather(phds, year, n, `2006`:`2016`))
+phds$year <- as.numeric(phds$year)
+
+phds_all <- phds %>% group_by(discipline, year) %>% 
+  tally(n) 
+  
+p <- ggplot(phds_all, aes(x = int_to_year(year), y = n, color = discipline)) + 
+  geom_line(size = 1.1) + 
+  geom_label_repel(data = subset(phds_all, year == 2016),  
+                  aes(x = int_to_year(year), y = n, 
+                      label = discipline, 
+                      color = discipline), 
+                  size = rel(2.1),
+                  nudge_x = 1,
+                  label.padding = 0.2,
+                  box.padding = 0.1,
+                  segment.color = NA,
+                  inherit.aes = FALSE) + 
+  scale_y_continuous(labels = scales::comma) + 
+  scale_x_date(breaks = int_to_year(seq(2006, 2016, by = 2)), 
+               date_labels = "%Y") + 
+  coord_cartesian(xlim = c(int_to_year(2006), int_to_year(2018))) + 
+  guides(color = FALSE, label = FALSE) + 
+  labs(x = "Year", y = "Count", 
+       title = "Doctorates Awarded in the U.S., 2006-2016", 
+       subtitle = "Selected Disciplines", 
+       caption = "Source: Survey of Earned Doctorates") 
+  
+ggsave("figures/socsci_phd_trends.pdf", p, width = 8, height = 6) 
+ggsave("figures/socsci_phd_trends.png", p, width = 8, height = 6) 
+
+phds_sexrace <- phds %>% 
+  group_by(discipline, year) %>% 
+  unite(race_sex, race_ethnicity:gender) %>%
+  group_by(discipline, year) %>%
+  mutate(freq = n / sum(n, na.rm = TRUE), 
+         pct = round(freq*100, 2))
+
+phd_count <- phds_sexrace %>% 
+  group_by(discipline, year) %>%
+  tally() %>% 
+  group_by(discipline) %>%
+  summarize(med = median(n)) %>%
+  mutate(med = format(med, trim = TRUE, big.mark = ","), 
+         med = paste0("(MAT = ", med, ")"), 
+         lab = paste(discipline, med))
+
+tmp <- phds_sexrace %>% 
+  filter(race_sex == "Black, Non-Hispanic_Female") 
+  
+tmp <- left_join(tmp, phd_count)
+
+p <-   ggplot(tmp, aes(x = int_to_year(year), y = freq, fill = lab)) + 
+    geom_col() + 
+    guides(fill = FALSE) + 
+    scale_y_continuous(labels = scales::percent_format(accuracy = 1)) + 
+    scale_x_date(breaks = int_to_year(seq(2008, 2016, by = 4)), 
+               date_labels = "%Y") + 
+    facet_wrap(~ reorder(lab, -freq, na.rm = TRUE)) + 
+    labs(x = "Year", y = NULL, 
+         title = "PhDs earned by Black, Non-Hispanic Women, as a percentage of all PhDs in selected fields", 
+         subtitle = "MAT = Median Annual Total PhDs awarded in the discipline as a whole.\n\nAs a baseline, approximately 6% of all U.S. adults are Black, Non-Hispanic Women.\nAbout 86% of U.S. PhDs are awarded to U.S. citizens and permanent residents.\nWhere year is blank, the N is not zero, but is suppressed for reasons of potential identifiability of individuals.", 
+         caption = "@kjhealy // socviz.co // Source: Survey of Earned Doctorates")  +
+  theme(axis.text = element_text(size = rel(1.2)))
+
+ggsave("figures/phd_black_f.pdf", p, width = 9, height = 8.5)
+
+tmp <- phds %>% 
+  group_by(discipline, year, gender) %>%
+  tally() %>%
+  group_by(discipline, year) %>%
+  mutate(freq = n / sum(n, na.rm = TRUE)) %>%
+  filter(gender == "Female") 
+  
+ggplot(tmp, aes(x = int_to_year(year), y = freq, color = discipline)) + 
+  geom_line(size = 1.1) + 
+  geom_label_repel(data = subset(tmp, year == 2016),  
+                  aes(x = int_to_year(year), y = freq, 
+                      label = discipline, color = discipline), 
+                  nudge_x = 3,
+                  segment.color = NA,
+                  inherit.aes = FALSE) + 
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) + 
+  scale_x_date(breaks = int_to_year(seq(2006, 2016, by = 2)), 
+               date_labels = "%Y") + 
+  coord_cartesian(xlim = c(int_to_year(2006), int_to_year(2018))) + 
+  guides(color = FALSE, label = FALSE) + 
+  labs(x = "Year", y = "Percent", title = "Percent Doctorates Awarded in the U.S. to Women, 2006-2016", subtitle = "Selected Disciplines", caption = "Source: Survey of Earned Doctorates")
+
+  
+  
+```
+
+```{r}
+phd_sex <- read_csv("data/earned_doctorates_gender.csv")
+phd_sex <- clean_names(gather(phd_sex, year, n, `2006`:`2016`))
+phd_sex$year <- as.numeric(phd_sex$year)
+phd_sex$discipline <- stringr::str_to_title(phd_sex$discipline)
+
+phd_sex <- phd_sex %>% 
+  filter(gender != "Refused to answer")
+
+phd_fem <- phd_sex %>% 
+  group_by(discipline, year) %>%
+  mutate(freq = n / sum(n, na.rm = TRUE)) %>%
+  filter(gender == "Female") 
+
+
+p <- ggplot(subset(phd_fem, discipline %in% 
+                c("Psychology", "Anthropology", "Sociology", "History", 
+                  "Political Science", "Economics")), 
+       aes(x = int_to_year(year), y = freq, color = discipline)) + 
+  geom_line(size = 1.1) + 
+  geom_label_repel(data = subset(phd_fem, discipline %in% 
+                c("Psychology", "Anthropology", "Sociology", "History", 
+                  "Political Science", "Economics") & year == 2016),  
+                  aes(x = int_to_year(year), y = freq, 
+                      label = discipline, color = discipline), 
+                  nudge_x = 3,
+                  segment.color = NA,
+                  inherit.aes = FALSE) + 
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) + 
+  scale_x_date(breaks = int_to_year(seq(2006, 2016, by = 2)), 
+               date_labels = "%Y") + 
+  coord_cartesian(xlim = c(int_to_year(2006), int_to_year(2018))) + 
+  guides(color = FALSE, label = FALSE) + 
+  labs(x = "Year", y = NULL, 
+       title = "Percent Doctorates Awarded in the U.S. to Women", subtitle = "Selected Disciplines, 2006-2016", caption = "@kjhealy / http://socviz.co / Data source: Survey of Earned Doctorates") +
+  theme(axis.text = element_text(size = rel(1.2)))
+
+ggsave("figures/gender_trend_1.pdf", p, width = 8, height = 8)
+  
+```
+
+
+```{r}
+
+p <- ggplot(subset(phd_fem, discipline %in% 
+                c("Physics", "Chemistry", "Computer Science", "Mathematics", "Astronomy", "Biological Sciences", "Atmospheric Sciences", "Earth Sciences")), 
+       aes(x = int_to_year(year), y = freq, color = discipline)) + 
+  geom_line(size = 1.1) + 
+  geom_label_repel(data = subset(phd_fem, discipline %in% 
+               c("Physics", "Chemistry", "Computer Science", "Mathematics", "Astronomy", "Biological Sciences", "Atmospheric Sciences", "Earth Sciences") & year == 2016),  
+                  aes(x = int_to_year(year), y = freq, 
+                      label = discipline, color = discipline), 
+                  nudge_x = 3,
+                  segment.color = NA,
+                  inherit.aes = FALSE) + 
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) + 
+  scale_x_date(breaks = int_to_year(seq(2006, 2016, by = 2)), 
+               date_labels = "%Y") + 
+  coord_cartesian(xlim = c(int_to_year(2006), int_to_year(2018))) + 
+  guides(color = FALSE, label = FALSE) + 
+  labs(x = "Year", y = NULL, 
+       title = "Percent Doctorates Awarded in the U.S. to Women", subtitle = "Selected Disciplines, 2006-2016", caption = "@kjhealy / http://socviz.co / Data source: Survey of Earned Doctorates") +
+  theme(axis.text = element_text(size = rel(1.2)))
+
+ggsave("figures/gender_trend_2.pdf", p, width = 8, height = 8)
+  
+
+```
+
+
+```{r}
+
+phd_n <-  phd_sex %>%
+  group_by(discipline, year) %>%
+  tally() 
+
+
+ 
+```
+
+```{r}
+
+foreigns <- read_csv("data/foreign.csv") %>%
+  gather(year, n, `2006`:`2016`) %>%
+  clean_names() %>%
+  fill(discipline) %>%
+  filter(citizenship != "SubTotal") %>%
+  select(-1) %>%
+  mutate(discipline = stringr::str_to_title(discipline),
+         n = na_if(n, "***"), 
+         n = stringr::str_remove_all(n, ","),
+         n = as.numeric(n), 
+         year = as.numeric(year)) %>%
+  group_by(discipline, year) %>%
+  mutate(freq = n / sum(n, na.rm = TRUE), 
+         pct = round(freq*100, 2))
+
+
+ss_fields <- c("Anthropology", "Economics", "History", 
+                  "Political Science", "Psychology", "Sociology")
+
+law <- "Law"
+
+ns_fields <- c("Physics", "Chemistry", "Computer Science", "Mathematics", "Astronomy", "Biological Sciences", "Earth Sciences")
+
+p <- ggplot(data = subset(foreigns, discipline %in% ss_fields &  
+                          citizenship == "Temporary residents"),
+            mapping = aes(x = int_to_year(year), 
+                          y = freq, 
+                          color = discipline)) + 
+              geom_line(size = 1.1) + 
+    geom_label_repel(data = subset(foreigns, discipline %in% ss_fields & 
+                                  citizenship == "Temporary residents" & 
+                                   year == 2016),
+                     mapping = aes(x = int_to_year(year), y = freq,
+                                   label = discipline, color = discipline),
+                     nudge_x = 3, segment.color = NA, inherit.aes = FALSE) + 
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) + 
+  scale_x_date(breaks = int_to_year(seq(2008, 2016, by = 3)), 
+               date_labels = "%Y") + 
+  coord_cartesian(xlim = c(int_to_year(2006), int_to_year(2018))) + 
+  guides(color = FALSE, label = FALSE) + 
+  labs(x = "Year", y = NULL, 
+       title = "Doctorates Awarded to Foreign Students in the U.S., 2006-2016", 
+       subtitle = "As a percentage of all PhDs awarded that year. Selected Disciplines", 
+       caption = "@kjhealy / socviz.co // Source: Survey of Earned Doctorates")
+    
+ggsave("figures/foreign_phds_ss.pdf", p, width = 8, height = 8)
+
+ggsave("figures/foreign_phds_ss.png", p, width = 8, height = 8)
+
+
+
+p <- ggplot(data = subset(foreigns, discipline %in% ns_fields &  
+                          citizenship == "Temporary residents"),
+            mapping = aes(x = int_to_year(year), 
+                          y = freq, 
+                          color = discipline)) + 
+              geom_line(size = 1.1) + 
+    geom_label_repel(data = subset(foreigns, discipline %in% ns_fields & 
+                                  citizenship == "Temporary residents" & 
+                                   year == 2016),
+                     mapping = aes(x = int_to_year(year), y = freq,
+                                   label = discipline, color = discipline),
+                     nudge_x = 3, segment.color = NA, inherit.aes = FALSE) + 
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) + 
+  scale_x_date(breaks = int_to_year(seq(2008, 2016, by = 3)), 
+               date_labels = "%Y") + 
+  coord_cartesian(xlim = c(int_to_year(2006), int_to_year(2018))) + 
+  guides(color = FALSE, label = FALSE) + 
+  labs(x = "Year", y = NULL, 
+       title = "Doctorates Awarded to Foreign Students in the U.S., 2006-2016", 
+       subtitle = "As a percentage of all PhDs awarded that year. Selected disciplines.", 
+       caption = "@kjhealy / socviz.co // Source: Survey of Earned Doctorates")
+    
+ggsave("figures/foreign_phds_ns.pdf", p, width = 8, height = 8)
+
+ggsave("figures/foreign_phds_ns.png", p, width = 8, height = 8)
+
+  
+p <- ggplot(data = subset(foreigns, discipline %in% law &  
+                          citizenship == "Temporary residents"),
+            mapping = aes(x = int_to_year(year), 
+                          y = freq, 
+                          color = discipline)) + 
+              geom_line(size = 1.1) + 
+    geom_label_repel(data = subset(foreigns, discipline %in% law & 
+                                  citizenship == "Temporary residents" & 
+                                   year == 2016),
+                     mapping = aes(x = int_to_year(year), y = freq,
+                                   label = discipline, color = discipline),
+                     nudge_x = 3, segment.color = NA, inherit.aes = FALSE) + 
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) + 
+  scale_x_date(breaks = int_to_year(seq(2008, 2016, by = 3)), 
+               date_labels = "%Y") + 
+  coord_cartesian(xlim = c(int_to_year(2006), int_to_year(2018))) + 
+  guides(color = FALSE, label = FALSE) + 
+  labs(x = "Year", y = NULL, 
+       title = "Doctorates Awarded to Foreign Students in the U.S., 2006-2016", 
+       subtitle = "As a percentage of all PhDs awarded that year in Law.", 
+       caption = "@kjhealy / socviz.co // Source: Survey of Earned Doctorates")
+    
+ggsave("figures/foreign_phds_law.pdf", p, width = 8, height = 8)
+
+ggsave("figures/foreign_phds_law.png", p, width = 8, height = 8)
+
+
+```
+
